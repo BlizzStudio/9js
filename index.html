@@ -3,44 +3,276 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatbot App</title>
+    <title>9JS 3D Library</title>
     <style>
         body {
             margin: 0;
-            padding: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        .speed-control {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .speed-control label {
             font-family: Arial, sans-serif;
-            background-color: #1e1e1e;
-            color: #ffffff;
-        }
-        .loading-screen {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            background-color: #1e1e1e;
-        }
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top: 4px solid #ffffff;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            font-size: 14px;
+            margin-bottom: 5px;
+            display: block;
         }
     </style>
 </head>
 <body>
-    <div class="loading-screen">
-        <div class="spinner"></div>
+    <div class="speed-control">
+        <label for="speed-slider">Speed Control</label>
+        <input type="range" id="speed-slider" min="0.01" max="0.5" step="0.01" value="0.05">
     </div>
+    <canvas id="canvas"></canvas>
+
     <script>
-        setTimeout(() => {
-            window.location.href = 'welcome.html'; // Redirect to the welcome screen after 4 seconds
-        }, 4000); // 4000 milliseconds = 4 seconds
+        // Simple 3D vector class
+        class Vector3 {
+            constructor(x, y, z) {
+                this.x = x;
+                this.y = y;
+                this.z = z;
+            }
+        }
+
+        // Simple camera class with zoom and rotation controls
+        class Camera {
+            constructor() {
+                this.position = new Vector3(0, 0, 5); // Camera starts 5 units away from origin
+                this.zoom = 1;
+                this.rotationX = 0;
+                this.rotationY = 0;
+            }
+
+            applyTransformations(ctx, width, height) {
+                ctx.translate(width / 2, height / 2);
+                ctx.scale(this.zoom, this.zoom);
+                ctx.rotate(this.rotationX);
+                ctx.rotate(this.rotationY);
+                ctx.translate(-width / 2, -height / 2);
+            }
+
+            zoomIn() {
+                this.zoom += 0.05;
+            }
+
+            zoomOut() {
+                if (this.zoom > 0.1) this.zoom -= 0.05;
+            }
+
+            rotate(dx, dy) {
+                this.rotationX += dx * 0.01;
+                this.rotationY += dy * 0.01;
+            }
+        }
+
+        // Shape classes (e.g., Cube)
+        class Shape {
+            constructor(color) {
+                this.color = color;
+                this.position = new Vector3(0, 0, 0); // Default position
+                this.rotation = new Vector3(0, 0, 0); // Default rotation
+            }
+
+            move(direction, speed) {
+                switch (direction) {
+                    case 'left':
+                        this.position.x -= speed;
+                        break;
+                    case 'right':
+                        this.position.x += speed;
+                        break;
+                    case 'up':
+                        this.position.y -= speed;
+                        break;
+                    case 'down':
+                        this.position.y += speed;
+                        break;
+                    case 'rotate':
+                        this.rotation.z += speed;
+                        break;
+                }
+            }
+        }
+
+        class Cube extends Shape {
+            constructor(size, color) {
+                super(color);
+                this.size = size;
+                this.vertices = [
+                    new Vector3(-1, -1, -1),
+                    new Vector3(1, -1, -1),
+                    new Vector3(1, 1, -1),
+                    new Vector3(-1, 1, -1),
+                    new Vector3(-1, -1, 1),
+                    new Vector3(1, -1, 1),
+                    new Vector3(1, 1, 1),
+                    new Vector3(-1, 1, 1)
+                ];
+                this.edges = [
+                    [0, 1], [1, 2], [2, 3], [3, 0], // Back face
+                    [4, 5], [5, 6], [6, 7], [7, 4], // Front face
+                    [0, 4], [1, 5], [2, 6], [3, 7]  // Connecting edges
+                ];
+            }
+
+            draw(ctx, width, height, camera) {
+                const projection = (v) => {
+                    const scale = this.size * camera.zoom;
+                    const distance = 3;
+                    const factor = distance / (distance - v.z);
+                    return {
+                        x: v.x * factor * scale + width / 2,
+                        y: v.y * factor * scale + height / 2
+                    };
+                };
+
+                // Apply the rotation to the vertices
+                const rotateZ = (v, angle) => {
+                    const cos = Math.cos(angle);
+                    const sin = Math.sin(angle);
+                    const x = v.x * cos - v.y * sin;
+                    const y = v.y * cos + v.x * sin;
+                    return new Vector3(x, y, v.z);
+                };
+
+                const rotatedVertices = this.vertices.map(v => rotateZ(v, this.rotation.z));
+
+                // Draw the edges of the cube
+                this.edges.forEach(([start, end]) => {
+                    const v1 = projection(rotatedVertices[start]);
+                    const v2 = projection(rotatedVertices[end]);
+                    ctx.beginPath();
+                    ctx.moveTo(v1.x, v1.y);
+                    ctx.lineTo(v2.x, v2.y);
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+            }
+        }
+
+        class Simple3D {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.shapes = [];
+                this.camera = new Camera();
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+
+                window.addEventListener('resize', () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                });
+
+                this.initControls();
+            }
+
+            add(shape) {
+                this.shapes.push(shape);
+            }
+
+            initControls() {
+                // Zoom and rotate with mouse wheel and drag
+                this.canvas.addEventListener('wheel', (event) => {
+                    if (event.deltaY < 0) this.camera.zoomIn();
+                    else this.camera.zoomOut();
+                });
+
+                let isDragging = false;
+                let previousMousePosition = null;
+
+                this.canvas.addEventListener('mousedown', (event) => {
+                    isDragging = true;
+                    previousMousePosition = { x: event.clientX, y: event.clientY };
+                });
+
+                this.canvas.addEventListener('mousemove', (event) => {
+                    if (isDragging) {
+                        const dx = event.clientX - previousMousePosition.x;
+                        const dy = event.clientY - previousMousePosition.y;
+                        this.camera.rotate(dx, dy);
+                        previousMousePosition = { x: event.clientX, y: event.clientY };
+                    }
+                });
+
+                this.canvas.addEventListener('mouseup', () => {
+                    isDragging = false;
+                });
+            }
+
+            render() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.camera.applyTransformations(this.ctx, this.canvas.width, this.canvas.height);
+                for (let shape of this.shapes) {
+                    shape.draw(this.ctx, this.canvas.width, this.canvas.height, this.camera);
+                }
+                requestAnimationFrame(() => this.render());
+            }
+        }
+
+        // Main library object
+        const _9js = {
+            scene: null,
+            speed: 0.05, // Default speed value
+            create(options) {
+                const { shape, color, move, speed = this.speed } = options;
+                let createdShape = null;
+
+                if (shape === 'cube') {
+                    createdShape = new Cube(100, color);
+                }
+
+                if (createdShape) {
+                    this.scene.add(createdShape);
+
+                    // Apply movement or rotation
+                    if (move && Array.isArray(move)) {
+                        setInterval(() => {
+                            move.forEach(direction => createdShape.move(direction, this.speed));
+                        }, 1000 / 60); // 60 FPS
+                    }
+                }
+            },
+
+            init() {
+                const canvas = document.getElementById('canvas');
+                this.scene = new Simple3D(canvas);
+                this.scene.render();
+
+                // Bind the speed slider input
+                const speedSlider = document.getElementById('speed-slider');
+                speedSlider.addEventListener('input', (event) => {
+                    this.speed = parseFloat(event.target.value); // Update speed based on slider
+                });
+            }
+        };
+
+        window._9js = _9js; // Expose 9js globally
     </script>
+    <script>
+    _9js.init();
+
+    // Create a moving and rotating cube
+    _9js.create({
+        shape: 'cube',
+        color: '#ff0000',
+        move: ['rotate', 'right'],
+        speed: 0.05
+    });
+</script>
+
 </body>
 </html>
